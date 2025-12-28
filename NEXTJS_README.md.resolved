@@ -1,0 +1,40 @@
+# Next.js Integration Guide (`boundless` project)
+
+Based on your project structure, here is the exact way to integrate the map.
+
+## 1. Install Dependencies
+Run this in your terminal:
+```bash
+npm install leaflet
+# Optional: TypeScript types if you want strict checking
+npm install -D @types/leaflet
+```
+
+## 2. Add the Component
+I have created the file [IndiaMap.tsx](file:///C:/Users/Manish/.gemini/antigravity/brain/7fe4f053-2427-4eaf-9ea8-b77cd2073e47/IndiaMap.tsx).
+1.  Copy it to your `components` folder:
+    `components/IndiaMap.tsx`
+
+## 3. Usage in a Page
+Since your project uses the **App Router** (`app` folder), you can import it directly into any page (e.g., `app/page.tsx` or `app/about/page.tsx`).
+
+```tsx
+import IndiaMap from '@/components/IndiaMap'; 
+
+export default function Page() {
+  return (
+    <main className="flex flex-col items-center justify-between p-24">
+      
+      <div className="w-full h-[600px] relative">
+        <IndiaMap className="rounded-lg shadow-lg" />
+      </div>
+
+    </main>
+  );
+}
+```
+
+## Key Features for Your Stack
+- **TypeScript ([.tsx](file:///C:/Users/Manish/.gemini/antigravity/brain/7fe4f053-2427-4eaf-9ea8-b77cd2073e47/IndiaMap.tsx))**: Fully typed and compatible with your `tsconfig.json`.
+- **Tailwind Ready**: The component accepts `className`, so you can style the container (e.g., `h-[500px] w-full`) using standard Tailwind classes.
+- **Client Side**: Uses `'use client'` automatically to work within the Next.js Server Components architecture.
