@@ -1,235 +1,182 @@
-'use client';
+var map = L.map('map', {
+    center: [22.5, 82.0],
+    zoom: 5,
+    minZoom: 4,
+    attributionControl: false,
+    zoomControl: false,
+    scrollWheelZoom: true,
+    background: 'transparent'
+});
 
-import { useEffect, useRef } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+// Define renderers
+// Create a custom pane for states to ensure they render ON TOP of the SVG base layer
+map.createPane('statesPane');
+map.getPane('statesPane').style.zIndex = 450; // Higher than default overlayPane (400)
 
-interface IndiaMapProps {
-    className?: string;
-}
+const svgRenderer = L.svg({ padding: 0.5 });
+const canvasRenderer = L.canvas({ padding: 0.5, pane: 'statesPane' });
 
-export default function IndiaMap({ className }: IndiaMapProps) {
-    const mapContainerRef = useRef<HTMLDivElement>(null);
-    const mapInstanceRef = useRef<L.Map | null>(null);
-    const animationFrameRef = useRef<number>();
-    const activeServicesRef = useRef<any[]>([]);
-
-    useEffect(() => {
-        if (!mapContainerRef.current || mapInstanceRef.current) return;
-
-        // --- 1. Map Initialization ---
-        const map = L.map(mapContainerRef.current, {
-            center: [22.5, 82.0],
-            zoom: 5,
-            minZoom: 4,
-            attributionControl: false,
-            zoomControl: false, // User requested no zoom buttons
-            scrollWheelZoom: true,
-            background: 'transparent', // User requested transparency
-        });
-
-        mapInstanceRef.current = map;
-
-        // --- 2. Styles Injection (for custom markers) ---
-        // Injecting styles dynamically since we don't have a global CSS file here
-        const styleId = 'india-map-styles';
-        if (!document.getElementById(styleId)) {
-            const styleSheet = document.createElement('style');
-            styleSheet.id = styleId;
-            styleSheet.innerText = `
-        .leaflet-container { background: transparent !important; }
-        .leaflet-marker-icon.custom-video-icon { background: transparent; border: none; }
-        .video-flag-wrapper { overflow: hidden; display: inline-block; }
-        .state-label { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; }
-      `;
-            document.head.appendChild(styleSheet);
-        }
-
-        // --- 3. Rendering Configuration (Hybrid) ---
-        // Create a custom pane for states to ensure they render ON TOP of the SVG base layer
-        map.createPane('statesPane');
-        map.getPane('statesPane')!.style.zIndex = '450';
-
-        const svgRenderer = L.svg({ padding: 0.5 });
-        const canvasRenderer = L.canvas({ padding: 0.5, pane: 'statesPane' });
-
-        // --- 4. Layers ---
-
-        // Define the SVG Gradient for the Flag
-        const svgGradient = `
-      <svg style="height: 0; width: 0; position: absolute;" aria-hidden="true" focusable="false">
-        <defs>
-          <linearGradient id="india-flag" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color:#FF671F;stop-opacity:1" />
-            <stop offset="33.33%" style="stop-color:#FF671F;stop-opacity:1" />
-            <stop offset="33.33%" style="stop-color:#FFFFFF;stop-opacity:1" />
-            <stop offset="66.66%" style="stop-color:#FFFFFF;stop-opacity:1" />
-            <stop offset="66.66%" style="stop-color:#046A38;stop-opacity:1" />
-            <stop offset="100%" style="stop-color:#046A38;stop-opacity:1" />
-          </linearGradient>
-        </defs>
-      </svg>
-    `;
-        // Append SVG defs to the container
-        const defsContainer = document.createElement('div');
-        defsContainer.innerHTML = svgGradient;
-        mapContainerRef.current.appendChild(defsContainer);
-
-        // Fetch Base Layer (India)
-        fetch('https://raw.githubusercontent.com/datameet/maps/master/Country/india-soi.geojson')
-            .then(res => res.json())
-            .then(data => {
-                let multiPolygonCoordinates: any[] = [];
-                data.features.forEach((feature: any) => {
-                    if (feature.geometry.type === 'Polygon') {
-                        multiPolygonCoordinates.push(feature.geometry.coordinates);
-                    } else if (feature.geometry.type === 'MultiPolygon') {
-                        feature.geometry.coordinates.forEach((polyCoords: any) => {
-                            multiPolygonCoordinates.push(polyCoords);
-                        });
-                    }
+// 1. Base Layer
+fetch('https://raw.githubusercontent.com/datameet/maps/master/Country/india-soi.geojson')
+    .then(response => {
+        if (!response.ok) throw new Error("Network response was not ok");
+        return response.json();
+    })
+    .then(data => {
+        var multiPolygonCoordinates = [];
+        data.features.forEach(feature => {
+            if (feature.geometry.type === 'Polygon') {
+                multiPolygonCoordinates.push(feature.geometry.coordinates);
+            } else if (feature.geometry.type === 'MultiPolygon') {
+                feature.geometry.coordinates.forEach(polyCoords => {
+                    multiPolygonCoordinates.push(polyCoords);
                 });
-
-                const unifiedFeature = {
-                    "type": "Feature", "properties": {},
-                    "geometry": { "type": "MultiPolygon", "coordinates": multiPolygonCoordinates }
-                };
-
-                const indiaLayer = L.geoJSON(unifiedFeature as any, {
-                    renderer: svgRenderer, // Use SVG for Gradient support
-                    style: { fillColor: 'url(#india-flag)', fillOpacity: 1, color: "none", weight: 0 }
-                }).addTo(map);
-
-                const bounds = indiaLayer.getBounds();
-                map.fitBounds(bounds, { padding: [50, 50] });
-                map.setMaxBounds(bounds.pad(0.5));
-                map.options.minZoom = map.getZoom() - 1;
-            })
-            .catch(e => console.error(e));
-
-        // Fetch Overlay Layer (States)
-        fetch('https://raw.githubusercontent.com/datameet/maps/master/website/docs/data/geojson/states.geojson')
-            .then(res => res.json())
-            .then(data => {
-                L.geoJSON(data, {
-                    renderer: canvasRenderer, // Use Canvas for performance
-                    style: { fillColor: 'transparent', fillOpacity: 0, color: "#000000", weight: 1, opacity: 0.5 },
-                    onEachFeature: (feature, layer) => {
-                        if (feature.properties && feature.properties.ST_NM) {
-                            layer.bindTooltip(feature.properties.ST_NM, { direction: 'center', className: 'state-label' });
-                        }
-                    }
-                }).addTo(map);
-            })
-            .catch(e => console.error(e));
-
-
-        // --- 5. Animation Logic ---
-
-        class SvgSequenceRenderer {
-            imgElement: HTMLImageElement;
-            basePath: string = '/svg_sequence/'; // Assuming public/svg_sequence in Next.js
-            totalFrames: number = 86;
-            frames: string[] = [];
-            currentIndex: number = -1;
-
-            constructor(imgElement: HTMLImageElement) {
-                this.imgElement = imgElement;
-                this.loadFrames();
             }
-
-            pad(num: number) {
-                let s = num + "";
-                while (s.length < 4) s = "0" + s;
-                return s;
-            }
-
-            loadFrames() {
-                for (let i = 1; i <= this.totalFrames; i++) {
-                    const src = this.basePath + this.pad(i) + ".svg";
-                    // Preload
-                    const img = new Image();
-                    img.src = src;
-                    this.frames.push(src);
-                }
-            }
-
-            updateAndRender(time: number) {
-                if (this.frames.length < this.totalFrames) return;
-                const msPerFrame = 6000 / this.totalFrames; // Slow motion 6s loop
-                const frameIdx = Math.floor(time / msPerFrame) % this.totalFrames;
-
-                if (this.currentIndex !== frameIdx) {
-                    this.imgElement.src = this.frames[frameIdx];
-                    this.currentIndex = frameIdx;
-                }
-            }
-        }
-
-        // Animation Loop
-        function startAnimationLoop() {
-            function loop(time: number) {
-                activeServicesRef.current.forEach(s => s.updateAndRender(time));
-                animationFrameRef.current = requestAnimationFrame(loop);
-            }
-            animationFrameRef.current = requestAnimationFrame(loop);
-        }
-
-        // --- 6. Add Flags ---
-
-        function addRealVideoFlag(lat: number, lng: number, targetUrl: string, locationName: string) {
-            const viewH = 40;
-            const imgH = 55;
-            const uid = 'flag-img-' + Math.random().toString(36).substr(2, 9);
-
-            // Using /svg_sequence/... assuming public folder structure
-            const htmlStr = `
-          <div class="video-flag-wrapper" style="height:${viewH}px;">
-               <img id="${uid}" src="/svg_sequence/0001.svg" style="height:${imgH}px; width:auto; border:none; outline:none; display:block;">
-          </div>
-      `;
-
-            const icon = L.divIcon({
-                className: 'custom-video-icon',
-                html: htmlStr,
-                iconSize: undefined, // Dynamic
-                iconAnchor: [1, viewH], // Bottom-Left [1, 40]
-                tooltipAnchor: [20, -viewH]
-            });
-
-            const marker = L.marker([lat, lng], { icon: icon }).addTo(map);
-
-            // Initialize Renderer after DOM update
-            setTimeout(() => {
-                const imgEl = document.getElementById(uid) as HTMLImageElement;
-                if (imgEl) {
-                    const renderer = new SvgSequenceRenderer(imgEl);
-                    activeServicesRef.current.push(renderer);
-                    if (!animationFrameRef.current) startAnimationLoop();
-                }
-            }, 100);
-
-            marker.on('click', () => {
-                window.location.href = targetUrl;
-            });
-            marker.bindTooltip(locationName, { permanent: false, direction: "top" });
-        }
-
-        // Add Markers
-        addRealVideoFlag(28.7041, 77.1025, 'https://delhi-site.com', 'Delhi');
-        addRealVideoFlag(19.0760, 72.8777, 'https://mumbai-site.com', 'Mumbai');
-        addRealVideoFlag(12.9716, 77.5946, 'https://bangalore-site.com', 'Bangalore');
-
-
-        // Cleanup
-        return () => {
-            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-            if (mapInstanceRef.current) {
-                mapInstanceRef.current.remove();
-                mapInstanceRef.current = null;
-            }
+        });
+        var unifiedFeature = {
+            "type": "Feature", "properties": {},
+            "geometry": { "type": "MultiPolygon", "coordinates": multiPolygonCoordinates }
         };
-    }, []);
+        var indiaLayer = L.geoJSON(unifiedFeature, {
+            renderer: svgRenderer, // Use SVG to support 'url(#india-flag)' gradient
+            style: { fillColor: 'url(#india-flag)', fillOpacity: 1, color: "none", weight: 0 }
+        }).addTo(map);
+        var bounds = indiaLayer.getBounds();
+        map.fitBounds(bounds, { padding: [50, 50] }); // Increased padding to show full map with space
+        map.setMaxBounds(bounds.pad(0.5)); // Relaxed bounds (50% buffer) to avoid hard cropping
+        map.options.minZoom = map.getZoom() - 1; // Allow zooming out slightly more
+    })
+    .catch(error => console.error('Error loading India GeoJSON:', error));
 
-    return <div ref={mapContainerRef} className={className} />;
+// 2. Overlay Layer
+fetch('https://raw.githubusercontent.com/datameet/maps/master/website/docs/data/geojson/states.geojson')
+    .then(response => response.json())
+    .then(data => {
+        L.geoJSON(data, {
+            renderer: canvasRenderer, // Use Canvas for performance on complex state borders
+            style: { fillColor: 'transparent', fillOpacity: 0, color: "#000000", weight: 1, opacity: 0.5 },
+            onEachFeature: function (feature, layer) {
+                if (feature.properties && feature.properties.ST_NM) {
+                    layer.bindTooltip(feature.properties.ST_NM, { direction: 'center', className: 'state-label' });
+                }
+            }
+        }).addTo(map);
+    })
+    .catch(error => console.error('Error loading States GeoJSON:', error));
+
+
+// --- SVG SEQUENCE RENDERER (DOM BASED) ---
+
+class SvgSequenceRenderer {
+    constructor(imgElement) {
+        this.imgElement = imgElement;
+
+        // Path to the copied SVGs
+        this.basePath = 'svg_sequence/';
+        this.totalFrames = 86;
+        this.frames = [];
+        this.imagesLoaded = 0;
+
+        this.loadFrames();
+    }
+
+    pad(num) {
+        let s = num + "";
+        while (s.length < 4) s = "0" + s;
+        return s;
+    }
+
+    loadFrames() {
+        console.log("Starting to load 86 SVG frames...");
+
+        for (let i = 1; i <= this.totalFrames; i++) {
+            const src = this.basePath + this.pad(i) + ".svg";
+            // Preload isn't strictly necessary for local files but good practice
+            const img = new Image();
+            img.src = src;
+
+            this.frames.push(src);
+        }
+    }
+
+    updateAndRender(time) {
+        if (this.frames.length < this.totalFrames) return;
+
+        // Playback: 86 frames over 6 seconds
+        const msPerFrame = 6000 / this.totalFrames;
+        const frameIdx = Math.floor(time / msPerFrame) % this.totalFrames;
+
+        const nextSrc = this.frames[frameIdx];
+
+        // Update DOM only if changed
+        // We use a custom attribute to track current src to avoid readingDOM if possible,
+        // or just check src. 
+        // Note: img.src returns full URL (file:///...), nextSrc is relative.
+        // So we blindly update or store index.
+
+        if (this.currentIndex !== frameIdx) {
+            this.imgElement.src = nextSrc;
+            this.currentIndex = frameIdx;
+        }
+    }
 }
+
+const activeServices = [];
+let animationFrameId;
+
+function startAnimationLoop() {
+    if (animationFrameId) return;
+    function loop(time) {
+        activeServices.forEach(s => s.updateAndRender(time));
+        animationFrameId = requestAnimationFrame(loop);
+    }
+    animationFrameId = requestAnimationFrame(loop);
+}
+
+function addRealVideoFlag(lat, lng, targetUrl, locationName) {
+    const viewH = 40; // Visible height (smaller size)
+    const imgH = 55;  // Actual rendered image height (larger to allow cropping)
+
+    const uid = 'flag-img-' + Math.random().toString(36).substr(2, 9);
+
+    // IMG tag for Animation
+    // using width:auto to maintain aspect ratio
+    // Wrapper uses overflow:hidden to crop the bottom of the image (pole)
+    // Anchored at bottom-left [1, viewH]
+    const htmlStr = `
+        <div class="video-flag-wrapper" style="height:${viewH}px; overflow:hidden; display:inline-block;">
+             <img id="${uid}" src="svg_sequence/0001.svg" style="height:${imgH}px; width:auto; border:none; outline:none; display:block;">
+        </div>
+    `;
+
+    const icon = L.divIcon({
+        className: 'custom-video-icon',
+        html: htmlStr,
+        iconSize: null, // Let size be dynamic based on content
+        iconAnchor: [1, viewH], // Box bottom-left + 1px
+        tooltipAnchor: [20, -viewH]
+    });
+
+    const marker = L.marker([lat, lng], { icon: icon }).addTo(map);
+
+    setTimeout(() => {
+        const imgEl = document.getElementById(uid);
+        if (imgEl) {
+            const renderer = new SvgSequenceRenderer(imgEl);
+            activeServices.push(renderer);
+            startAnimationLoop();
+        }
+    }, 100);
+
+    marker.on('click', function () {
+        window.location.href = targetUrl;
+    });
+
+    marker.bindTooltip(locationName, { permanent: false, direction: "top" });
+}
+
+
+// Add markers
+addRealVideoFlag(28.7041, 77.1025, 'https://delhi-site.com', 'Delhi');
+addRealVideoFlag(19.0760, 72.8777, 'https://mumbai-site.com', 'Mumbai');
+addRealVideoFlag(12.9716, 77.5946, 'https://bangalore-site.com', 'Bangalore');
