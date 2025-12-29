@@ -61,10 +61,10 @@ export default function IndiaMap({ className }: IndiaMapProps) {
         <defs>
           <linearGradient id="india-flag" x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" style="stop-color:#FF671F;stop-opacity:1" />
-            <stop offset="33%" style="stop-color:#FF671F;stop-opacity:1" />
-            <stop offset="33%" style="stop-color:#FFFFFF;stop-opacity:1" />
-            <stop offset="66%" style="stop-color:#FFFFFF;stop-opacity:1" />
-            <stop offset="66%" style="stop-color:#046A38;stop-opacity:1" />
+            <stop offset="33.33%" style="stop-color:#FF671F;stop-opacity:1" />
+            <stop offset="33.33%" style="stop-color:#FFFFFF;stop-opacity:1" />
+            <stop offset="66.66%" style="stop-color:#FFFFFF;stop-opacity:1" />
+            <stop offset="66.66%" style="stop-color:#046A38;stop-opacity:1" />
             <stop offset="100%" style="stop-color:#046A38;stop-opacity:1" />
           </linearGradient>
         </defs>
