@@ -3,25 +3,27 @@ var map = L.map('map', {
     zoom: 5,
     minZoom: 4,
     attributionControl: false,
-    zoomControl: true, // Enable +/- zoom buttons
-    scrollWheelZoom: true, // 'scrollWheelZoom: false' is crucial for embedded maps to allow page scrolling without getting stuck.
-    background: 'transparent' // Allow host site background to show through
+    zoomControl: false,
+    scrollWheelZoom: true,
+    background: 'transparent'
 });
 
-// REMOVED: L.tileLayer(...) - We do not want the world map background.
+// Define renderers
+// Create a custom pane for states to ensure they render ON TOP of the SVG base layer
+map.createPane('statesPane');
+map.getPane('statesPane').style.zIndex = 450; // Higher than default overlayPane (400)
 
-// 1. Base Layer: Country Outline with Tricolor Gradient Fill
-// Fetching the Survey of India (SOI) Official Boundary
+const svgRenderer = L.svg({ padding: 0.5 });
+const canvasRenderer = L.canvas({ padding: 0.5, pane: 'statesPane' });
+
+// 1. Base Layer
 fetch('https://raw.githubusercontent.com/datameet/maps/master/Country/india-soi.geojson')
     .then(response => {
         if (!response.ok) throw new Error("Network response was not ok");
         return response.json();
     })
     .then(data => {
-        // MERGE LOGIC: Combine all state polygons into a single MultiPolygon
-        // This ensures the gradient fills the entire country bounding box continuously.
         var multiPolygonCoordinates = [];
-
         data.features.forEach(feature => {
             if (feature.geometry.type === 'Polygon') {
                 multiPolygonCoordinates.push(feature.geometry.coordinates);
@@ -31,52 +33,29 @@ fetch('https://raw.githubusercontent.com/datameet/maps/master/Country/india-soi.
                 });
             }
         });
-
-        // Create a single unified feature
         var unifiedFeature = {
-            "type": "Feature",
-            "properties": {},
-            "geometry": {
-                "type": "MultiPolygon",
-                "coordinates": multiPolygonCoordinates
-            }
+            "type": "Feature", "properties": {},
+            "geometry": { "type": "MultiPolygon", "coordinates": multiPolygonCoordinates }
         };
-
-        // Render the unified official shape
         var indiaLayer = L.geoJSON(unifiedFeature, {
-            style: {
-                fillColor: 'url(#india-flag)',
-                fillOpacity: 1,
-                color: "none",
-                weight: 0
-            }
+            renderer: svgRenderer, // Use SVG to support 'url(#india-flag)' gradient
+            style: { fillColor: 'url(#india-flag)', fillOpacity: 1, color: "none", weight: 0 }
         }).addTo(map);
-
-        // AUTO-FIT: Zoom the map to perfectly fit the India boundary
-        map.fitBounds(indiaLayer.getBounds(), {
-            padding: [20, 20] // Add slight padding so borders aren't touching screen edges
-        });
+        var bounds = indiaLayer.getBounds();
+        map.fitBounds(bounds, { padding: [50, 50] }); // Increased padding to show full map with space
+        map.setMaxBounds(bounds.pad(0.5)); // Relaxed bounds (50% buffer) to avoid hard cropping
+        map.options.minZoom = map.getZoom() - 1; // Allow zooming out slightly more
     })
-    .catch(error => {
-        console.error('Error loading India GeoJSON:', error);
-        // Fallback if datameet fails (unlikely, but good practice)
-        alert("Failed to load map data. Please check connection.");
-    });
+    .catch(error => console.error('Error loading India GeoJSON:', error));
 
-// 2. Overlay Layer: State Boundaries
+// 2. Overlay Layer
 fetch('https://raw.githubusercontent.com/datameet/maps/master/website/docs/data/geojson/states.geojson')
     .then(response => response.json())
     .then(data => {
         L.geoJSON(data, {
-            style: {
-                fillColor: 'transparent',
-                fillOpacity: 0,
-                color: "#000000", // Black state borders
-                weight: 1,
-                opacity: 0.5
-            },
+            renderer: canvasRenderer, // Use Canvas for performance on complex state borders
+            style: { fillColor: 'transparent', fillOpacity: 0, color: "#000000", weight: 1, opacity: 0.5 },
             onEachFeature: function (feature, layer) {
-                // Optional: Add tooltips for state names if available
                 if (feature.properties && feature.properties.ST_NM) {
                     layer.bindTooltip(feature.properties.ST_NM, { direction: 'center', className: 'state-label' });
                 }
@@ -85,43 +64,119 @@ fetch('https://raw.githubusercontent.com/datameet/maps/master/website/docs/data/
     })
     .catch(error => console.error('Error loading States GeoJSON:', error));
 
-// Official Color Hex Codes (kept for markers)
-const COLOR_SAFFRON = '#FF671F';
-const COLOR_GREEN = '#046A38';
 
-// Custom IDN Flag Icon definition
-var flagIcon = L.divIcon({
-    className: 'custom-flag-icon',
-    html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="30" height="30">
-             <!-- Pole -->
-             <line x1="2" y1="2" x2="2" y2="22" stroke="black" stroke-width="2" />
-             <!-- Flag -->
-             <rect x="2" y="2" width="16" height="4" fill="#FF671F" />
-             <rect x="2" y="6" width="16" height="4" fill="#FFFFFF" />
-             <rect x="2" y="10" width="16" height="4" fill="#046A38" />
-             <!-- Chakra (Symbolic) -->
-             <circle cx="10" cy="8" r="1.5" fill="navy" />
-           </svg>`,
-    iconSize: [30, 30],
-    iconAnchor: [2, 22], // Anchor at the bottom of the pole
-    tooltipAnchor: [10, -15]
-});
+// --- SVG SEQUENCE RENDERER (DOM BASED) ---
 
-// Function to add a marker with a custom flag icon and redirect URL
-function addRedirectMarker(lat, lng, targetUrl, locationName) {
-    // Use the custom flag icon
-    var marker = L.marker([lat, lng], { icon: flagIcon }).addTo(map);
+class SvgSequenceRenderer {
+    constructor(imgElement) {
+        this.imgElement = imgElement;
 
-    // One-click redirect behavior
-    marker.on('click', function () {
-        window.location.href = targetUrl; // Redirects the current page
+        // Path to the copied SVGs
+        this.basePath = 'svg_sequence/';
+        this.totalFrames = 86;
+        this.frames = [];
+        this.imagesLoaded = 0;
+
+        this.loadFrames();
+    }
+
+    pad(num) {
+        let s = num + "";
+        while (s.length < 4) s = "0" + s;
+        return s;
+    }
+
+    loadFrames() {
+        console.log("Starting to load 86 SVG frames...");
+
+        for (let i = 1; i <= this.totalFrames; i++) {
+            const src = this.basePath + this.pad(i) + ".svg";
+            // Preload isn't strictly necessary for local files but good practice
+            const img = new Image();
+            img.src = src;
+
+            this.frames.push(src);
+        }
+    }
+
+    updateAndRender(time) {
+        if (this.frames.length < this.totalFrames) return;
+
+        // Playback: 86 frames over 6 seconds
+        const msPerFrame = 6000 / this.totalFrames;
+        const frameIdx = Math.floor(time / msPerFrame) % this.totalFrames;
+
+        const nextSrc = this.frames[frameIdx];
+
+        // Update DOM only if changed
+        // We use a custom attribute to track current src to avoid readingDOM if possible,
+        // or just check src. 
+        // Note: img.src returns full URL (file:///...), nextSrc is relative.
+        // So we blindly update or store index.
+
+        if (this.currentIndex !== frameIdx) {
+            this.imgElement.src = nextSrc;
+            this.currentIndex = frameIdx;
+        }
+    }
+}
+
+const activeServices = [];
+let animationFrameId;
+
+function startAnimationLoop() {
+    if (animationFrameId) return;
+    function loop(time) {
+        activeServices.forEach(s => s.updateAndRender(time));
+        animationFrameId = requestAnimationFrame(loop);
+    }
+    animationFrameId = requestAnimationFrame(loop);
+}
+
+function addRealVideoFlag(lat, lng, targetUrl, locationName) {
+    const viewH = 40; // Visible height (smaller size)
+    const imgH = 55;  // Actual rendered image height (larger to allow cropping)
+
+    const uid = 'flag-img-' + Math.random().toString(36).substr(2, 9);
+
+    // IMG tag for Animation
+    // using width:auto to maintain aspect ratio
+    // Wrapper uses overflow:hidden to crop the bottom of the image (pole)
+    // Anchored at bottom-left [1, viewH]
+    const htmlStr = `
+        <div class="video-flag-wrapper" style="height:${viewH}px; overflow:hidden; display:inline-block;">
+             <img id="${uid}" src="svg_sequence/0001.svg" style="height:${imgH}px; width:auto; border:none; outline:none; display:block;">
+        </div>
+    `;
+
+    const icon = L.divIcon({
+        className: 'custom-video-icon',
+        html: htmlStr,
+        iconSize: null, // Let size be dynamic based on content
+        iconAnchor: [1, viewH], // Box bottom-left + 1px
+        tooltipAnchor: [20, -viewH]
     });
 
-    // Add a tooltip that appears on hover
+    const marker = L.marker([lat, lng], { icon: icon }).addTo(map);
+
+    setTimeout(() => {
+        const imgEl = document.getElementById(uid);
+        if (imgEl) {
+            const renderer = new SvgSequenceRenderer(imgEl);
+            activeServices.push(renderer);
+            startAnimationLoop();
+        }
+    }, 100);
+
+    marker.on('click', function () {
+        window.location.href = targetUrl;
+    });
+
     marker.bindTooltip(locationName, { permanent: false, direction: "top" });
 }
 
-// Markers for specific locations
-addRedirectMarker(28.7041, 77.1025, 'https://delhi-site.com', 'Delhi');
-addRedirectMarker(19.0760, 72.8777, 'https://mumbai-site.com', 'Mumbai');
-addRedirectMarker(12.9716, 77.5946, 'https://bangalore-site.com', 'Bangalore');
+
+// Add markers
+addRealVideoFlag(28.7041, 77.1025, 'https://delhi-site.com', 'Delhi');
+addRealVideoFlag(19.0760, 72.8777, 'https://mumbai-site.com', 'Mumbai');
+addRealVideoFlag(12.9716, 77.5946, 'https://bangalore-site.com', 'Bangalore');
