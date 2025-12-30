@@ -140,7 +140,7 @@ export default function IndiaMap({ className }: IndiaMapProps) {
                 className: 'custom-video-icon',
                 html: htmlStr,
                 iconSize: undefined, // Dynamic
-                iconAnchor: [1, height], // Bottom-Left
+                iconAnchor: [2, height], // Bottom-Left
                 tooltipAnchor: [20, -height]
             });
 
@@ -170,3 +170,4 @@ export default function IndiaMap({ className }: IndiaMapProps) {
 
     return <div ref={mapContainerRef} className={className} />;
 }
+
