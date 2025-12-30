@@ -79,7 +79,7 @@ function addRealVideoFlag(lat, lng, targetUrl, locationName) {
         className: 'custom-video-icon',
         html: htmlStr,
         iconSize: null, // Let size be dynamic based on content
-        iconAnchor: [1, height], // Anchor at bottom-left
+        iconAnchor: [2, height], // Anchor at bottom-left
         tooltipAnchor: [20, -height]
     });
 
@@ -97,3 +97,4 @@ function addRealVideoFlag(lat, lng, targetUrl, locationName) {
 addRealVideoFlag(28.7041, 77.1025, 'https://delhi-site.com', 'Delhi');
 addRealVideoFlag(19.0760, 72.8777, 'https://mumbai-site.com', 'Mumbai');
 addRealVideoFlag(12.9716, 77.5946, 'https://bangalore-site.com', 'Bangalore');
+
