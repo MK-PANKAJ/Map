@@ -65,108 +65,25 @@ fetch('https://raw.githubusercontent.com/datameet/maps/master/website/docs/data/
     .catch(error => console.error('Error loading States GeoJSON:', error));
 
 
-// --- SVG SEQUENCE RENDERER (DOM BASED) ---
-
-class SvgSequenceRenderer {
-    constructor(imgElement) {
-        this.imgElement = imgElement;
-
-        // Path to the copied SVGs
-        this.basePath = 'svg_sequence/';
-        this.totalFrames = 86;
-        this.frames = [];
-        this.imagesLoaded = 0;
-
-        this.loadFrames();
-    }
-
-    pad(num) {
-        let s = num + "";
-        while (s.length < 4) s = "0" + s;
-        return s;
-    }
-
-    loadFrames() {
-        console.log("Starting to load 86 SVG frames...");
-
-        for (let i = 1; i <= this.totalFrames; i++) {
-            const src = this.basePath + this.pad(i) + ".svg";
-            // Preload isn't strictly necessary for local files but good practice
-            const img = new Image();
-            img.src = src;
-
-            this.frames.push(src);
-        }
-    }
-
-    updateAndRender(time) {
-        if (this.frames.length < this.totalFrames) return;
-
-        // Playback: 86 frames over 6 seconds
-        const msPerFrame = 6000 / this.totalFrames;
-        const frameIdx = Math.floor(time / msPerFrame) % this.totalFrames;
-
-        const nextSrc = this.frames[frameIdx];
-
-        // Update DOM only if changed
-        // We use a custom attribute to track current src to avoid readingDOM if possible,
-        // or just check src. 
-        // Note: img.src returns full URL (file:///...), nextSrc is relative.
-        // So we blindly update or store index.
-
-        if (this.currentIndex !== frameIdx) {
-            this.imgElement.src = nextSrc;
-            this.currentIndex = frameIdx;
-        }
-    }
-}
-
-const activeServices = [];
-let animationFrameId;
-
-function startAnimationLoop() {
-    if (animationFrameId) return;
-    function loop(time) {
-        activeServices.forEach(s => s.updateAndRender(time));
-        animationFrameId = requestAnimationFrame(loop);
-    }
-    animationFrameId = requestAnimationFrame(loop);
-}
+// --- GIF POINTER RENDERING ---
 
 function addRealVideoFlag(lat, lng, targetUrl, locationName) {
-    const viewH = 40; // Visible height (smaller size)
-    const imgH = 55;  // Actual rendered image height (larger to allow cropping)
+    const height = 35; // Reduced height to make it smaller
 
-    const uid = 'flag-img-' + Math.random().toString(36).substr(2, 9);
-
-    // IMG tag for Animation
-    // using width:auto to maintain aspect ratio
-    // Wrapper uses overflow:hidden to crop the bottom of the image (pole)
-    // Anchored at bottom-left [1, viewH]
+    // IMG tag for Animation.gif directly, no cropping wrapper
     const htmlStr = `
-        <div class="video-flag-wrapper" style="height:${viewH}px; overflow:hidden; display:inline-block;">
-             <img id="${uid}" src="svg_sequence/0001.svg" style="height:${imgH}px; width:auto; border:none; outline:none; display:block;">
-        </div>
+        <img src="Animation.gif" style="height:${height}px; width:auto; border:none; outline:none; display:block;">
     `;
 
     const icon = L.divIcon({
         className: 'custom-video-icon',
         html: htmlStr,
         iconSize: null, // Let size be dynamic based on content
-        iconAnchor: [1, viewH], // Box bottom-left + 1px
-        tooltipAnchor: [20, -viewH]
+        iconAnchor: [1, height], // Anchor at bottom-left
+        tooltipAnchor: [20, -height]
     });
 
     const marker = L.marker([lat, lng], { icon: icon }).addTo(map);
-
-    setTimeout(() => {
-        const imgEl = document.getElementById(uid);
-        if (imgEl) {
-            const renderer = new SvgSequenceRenderer(imgEl);
-            activeServices.push(renderer);
-            startAnimationLoop();
-        }
-    }, 100);
 
     marker.on('click', function () {
         window.location.href = targetUrl;
