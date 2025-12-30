@@ -11,8 +11,7 @@ interface IndiaMapProps {
 export default function IndiaMap({ className }: IndiaMapProps) {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<L.Map | null>(null);
-    const animationFrameRef = useRef<number>();
-    const activeServicesRef = useRef<any[]>([]);
+
 
     useEffect(() => {
         if (!mapContainerRef.current || mapInstanceRef.current) return;
@@ -126,88 +125,26 @@ export default function IndiaMap({ className }: IndiaMapProps) {
 
         // --- 5. Animation Logic ---
 
-        class SvgSequenceRenderer {
-            imgElement: HTMLImageElement;
-            basePath: string = '/svg_sequence/'; // Assuming public/svg_sequence in Next.js
-            totalFrames: number = 86;
-            frames: string[] = [];
-            currentIndex: number = -1;
 
-            constructor(imgElement: HTMLImageElement) {
-                this.imgElement = imgElement;
-                this.loadFrames();
-            }
-
-            pad(num: number) {
-                let s = num + "";
-                while (s.length < 4) s = "0" + s;
-                return s;
-            }
-
-            loadFrames() {
-                for (let i = 1; i <= this.totalFrames; i++) {
-                    const src = this.basePath + this.pad(i) + ".svg";
-                    // Preload
-                    const img = new Image();
-                    img.src = src;
-                    this.frames.push(src);
-                }
-            }
-
-            updateAndRender(time: number) {
-                if (this.frames.length < this.totalFrames) return;
-                const msPerFrame = 6000 / this.totalFrames; // Slow motion 6s loop
-                const frameIdx = Math.floor(time / msPerFrame) % this.totalFrames;
-
-                if (this.currentIndex !== frameIdx) {
-                    this.imgElement.src = this.frames[frameIdx];
-                    this.currentIndex = frameIdx;
-                }
-            }
-        }
-
-        // Animation Loop
-        function startAnimationLoop() {
-            function loop(time: number) {
-                activeServicesRef.current.forEach(s => s.updateAndRender(time));
-                animationFrameRef.current = requestAnimationFrame(loop);
-            }
-            animationFrameRef.current = requestAnimationFrame(loop);
-        }
 
         // --- 6. Add Flags ---
 
         function addRealVideoFlag(lat: number, lng: number, targetUrl: string, locationName: string) {
-            const viewH = 40;
-            const imgH = 55;
-            const uid = 'flag-img-' + Math.random().toString(36).substr(2, 9);
+            const height = 35; // Reduced height to match script.js
 
-            // Using /svg_sequence/... assuming public folder structure
             const htmlStr = `
-          <div class="video-flag-wrapper" style="height:${viewH}px;">
-               <img id="${uid}" src="/svg_sequence/0001.svg" style="height:${imgH}px; width:auto; border:none; outline:none; display:block;">
-          </div>
-      `;
+                <img src="/Animation.gif" style="height:${height}px; width:auto; border:none; outline:none; display:block;">
+            `;
 
             const icon = L.divIcon({
                 className: 'custom-video-icon',
                 html: htmlStr,
                 iconSize: undefined, // Dynamic
-                iconAnchor: [1, viewH], // Bottom-Left [1, 40]
-                tooltipAnchor: [20, -viewH]
+                iconAnchor: [1, height], // Bottom-Left
+                tooltipAnchor: [20, -height]
             });
 
             const marker = L.marker([lat, lng], { icon: icon }).addTo(map);
-
-            // Initialize Renderer after DOM update
-            setTimeout(() => {
-                const imgEl = document.getElementById(uid) as HTMLImageElement;
-                if (imgEl) {
-                    const renderer = new SvgSequenceRenderer(imgEl);
-                    activeServicesRef.current.push(renderer);
-                    if (!animationFrameRef.current) startAnimationLoop();
-                }
-            }, 100);
 
             marker.on('click', () => {
                 window.location.href = targetUrl;
@@ -223,7 +160,7 @@ export default function IndiaMap({ className }: IndiaMapProps) {
 
         // Cleanup
         return () => {
-            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+
             if (mapInstanceRef.current) {
                 mapInstanceRef.current.remove();
                 mapInstanceRef.current = null;
